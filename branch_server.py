@@ -1,3 +1,4 @@
+# branch_server.py
 import argparse
 import socket
 import threading
@@ -55,6 +56,10 @@ class BranchServer:
 
             # replication handler (applies a replicated update)
             "replicate": self.handle_replicate,
+
+            # logging endpoints
+            "get_logs": self.handle_get_logs,              # LOG - return logs
+            "log_operation": self.handle_log_operation,    # LOG - remote-write a log entry
         }
 
     # ---------- DB ----------
@@ -70,6 +75,15 @@ class BranchServer:
                             account_no TEXT,
                             amount REAL,
                             type TEXT
+                            )""")
+        # LOG: persistent operation logs
+        self.cur.execute("""CREATE TABLE IF NOT EXISTS operation_logs (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            timestamp TEXT,
+                            account_no TEXT,
+                            action TEXT,
+                            amount REAL,
+                            result TEXT
                             )""")
         self.conn.commit()
 
@@ -110,6 +124,16 @@ class BranchServer:
         self.cur.execute("SELECT account_no, name, balance FROM accounts")
         return [{"account_no": a, "name": n, "balance": float(b)} for (a,n,b) in self.cur.fetchall()]
 
+    # ---------- Logging helpers ----------
+    def log_operation(self, account_no: str, action: str, amount: float, result: str=""):
+        """Persist an operation log for an account."""
+        timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        self.cur.execute(
+            "INSERT INTO operation_logs (timestamp, account_no, action, amount, result) VALUES (?, ?, ?, ?, ?)",
+            (timestamp, account_no, action, amount, result)
+        )
+        self.conn.commit()
+
     # Replication: best-effort apply to replicas
     def replicate_to_replicas(self, action: str, params: Dict[str,Any]) -> List[Dict[str,Any]]:
         results = []
@@ -142,6 +166,8 @@ class BranchServer:
             self.conn.commit()
         # replicate create to replicas (best effort)
         self.replicate_to_replicas("create_account", {"account_no": acc, "name": name, "balance": bal})
+        # LOG
+        self.log_operation(acc, "create_account", bal, f"created {acc}")
         return {"status":"ok", "result": "account created"}
 
     def handle_list_accounts(self, params: Dict[str,Any]) -> Dict[str,Any]:
@@ -173,6 +199,11 @@ class BranchServer:
             self.update_balance(acc, new_bal)
         # replicate deposit (best effort)
         self.replicate_to_replicas("deposit", {"account_no": acc, "amount": amt})
+        # LOG
+        try:
+            self.log_operation(acc, "deposit", amt, f"new_balance:{new_bal}")
+        except Exception:
+            pass
         return {"status":"ok", "result": {"balance": new_bal}}
 
     def handle_withdraw(self, params: Dict[str,Any]) -> Dict[str,Any]:
@@ -193,6 +224,11 @@ class BranchServer:
             self.update_balance(acc, new_bal)
         # replicate withdraw (best effort)
         self.replicate_to_replicas("withdraw", {"account_no": acc, "amount": amt})
+        # LOG
+        try:
+            self.log_operation(acc, "withdraw", amt, f"new_balance:{new_bal}")
+        except Exception:
+            pass
         return {"status":"ok", "result": {"balance": new_bal}}
 
     # ---------- 2PC handlers for withdraw (source) ----------
@@ -242,6 +278,11 @@ class BranchServer:
             self.conn.commit()
         # replicate final withdraw (best effort)
         self.replicate_to_replicas("withdraw", {"account_no": acc, "amount": amt})
+        # LOG
+        try:
+            self.log_operation(acc, "commit_withdraw", amt, f"new_balance:{new_bal}")
+        except Exception:
+            pass
         return {"status":"ok"}
 
     def handle_abort_withdraw(self, params: Dict[str,Any]) -> Dict[str,Any]:
@@ -294,6 +335,11 @@ class BranchServer:
             self.conn.commit()
         # replicate deposit (best effort)
         self.replicate_to_replicas("deposit", {"account_no": acc, "amount": amt})
+        # LOG
+        try:
+            self.log_operation(acc, "commit_deposit", amt, f"new_balance:{new_bal}")
+        except Exception:
+            pass
         return {"status":"ok"}
 
     def handle_abort_deposit(self, params: Dict[str,Any]) -> Dict[str,Any]:
@@ -316,7 +362,6 @@ class BranchServer:
             2) remote prepare_deposit(txid) on dest_host:dest_port
             3) commit local withdraw
             4) commit remote deposit
-        This ordering minimizes lost money if remote commit fails (we commit local first then remote).
         """
         src_acc = params.get("src_account_no")
         dest_host = params.get("dest_host")
@@ -354,9 +399,15 @@ class BranchServer:
         commit_remote = send_request(dest_host, dest_port, "commit_deposit", {"txid": txid})
         if commit_remote.get("status") != "ok":
             # at this point local already committed -> inconsistent unless we do compensation
-            # Attempt best-effort: notify remote abort (already tried) and return error
             return {"status":"error","error":"remote commit failed: " + str(commit_remote)}
 
+        # LOG: record transfer on this branch (source)
+        try:
+            self.log_operation(src_acc, "inter_branch_transfer_out", amount, f"to:{dest_host}:{dest_acc} txid:{txid}")
+        except Exception:
+            pass
+
+        # note: remote branch commit_deposit already logs the deposit in its DB
         return {"status":"ok", "result": {"status":"transfer_complete", "txid": txid, "amount": amount,
                                          "from": f"{self.name}:{src_acc}", "to": f"{dest_host}:{dest_acc}"}}
 
@@ -396,6 +447,13 @@ class BranchServer:
         # replicate both updates (best effort)
         self.replicate_to_replicas("withdraw", {"account_no": src_account, "amount": amount})
         self.replicate_to_replicas("deposit", {"account_no": dest_account, "amount": amount})
+
+        # LOG both accounts
+        try:
+            self.log_operation(src_account, "local_transfer_out", amount, f"to:{dest_account}")
+            self.log_operation(dest_account, "local_transfer_in", amount, f"from:{src_account}")
+        except Exception:
+            pass
 
         return {"status": "ok", "result": {
             "from": {"account": src_account, "balance": new_src_bal},
@@ -441,6 +499,31 @@ class BranchServer:
             return {"status":"ok"}
         # other replicate actions are no-op on replica
         return {"status":"ok"}
+
+    # ---------- Logging handlers ----------
+    def handle_get_logs(self, params: Dict[str,Any]) -> Dict[str,Any]:
+        """Return operation logs for an account (most recent first)."""
+        acc = params.get("account_no") or params.get("account")
+        if not acc:
+            return {"status":"error", "error":"missing account_no"}
+        try:
+            self.cur.execute("SELECT timestamp, action, amount, result FROM operation_logs WHERE account_no=? ORDER BY id DESC LIMIT 200", (acc,))
+            rows = [{"timestamp": t, "action": a, "amount": amt, "result": r} for (t,a,amt,r) in self.cur.fetchall()]
+            return {"status":"ok", "result": rows}
+        except Exception as e:
+            return {"status":"error", "error": str(e)}
+
+    def handle_log_operation(self, params: Dict[str,Any]) -> Dict[str,Any]:
+        """Allow remote/replicated insertion of a log entry (used by other branches or replicas)."""
+        acc = params.get("account_no")
+        action = params.get("action", "")
+        amount = float(params.get("amount", 0.0)) if params.get("amount") is not None else 0.0
+        result = params.get("result", "")
+        try:
+            self.log_operation(acc, action, amount, result)
+            return {"status":"ok"}
+        except Exception as e:
+            return {"status":"error", "error": str(e)}
 
     # ---------- Network server ----------
     def start(self):

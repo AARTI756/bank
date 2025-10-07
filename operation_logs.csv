@@ -1,0 +1,9 @@
+Time,Branch,Account,Action,Result
+2025-10-07 23:17:02,Mumbai Branch,1001,Deposit,"{'result': {'balance': 80260.0}, 'status': 'ok'}"
+2025-10-07 23:17:07,Mumbai Branch,1001,Withdraw,"{'result': {'balance': 79460.0}, 'status': 'ok'}"
+2025-10-07 23:17:09,Mumbai Branch,1001,List Accounts,"{'result': [{'account_no': '1001', 'balance': 79460.0, 'name': 'User_Mumbai_1'}, {'account_no': '1002', 'balance': 22410.0, 'name': 'User_Mumbai_2'}], 'status': 'ok'}"
+2025-10-07 23:17:14,Delhi Branch,1001,Deposit,"{'result': {'balance': 89950.0}, 'status': 'ok'}"
+2025-10-07 23:17:17,Delhi Branch,1001,Withdraw,"{'result': {'balance': 89150.0}, 'status': 'ok'}"
+2025-10-07 23:17:18,Delhi Branch,1001,List Accounts,"{'result': [{'account_no': '1001', 'balance': 89150.0, 'name': 'User_Delhi_1'}, {'account_no': '1002', 'balance': 19110.0, 'name': 'User_Delhi_2'}], 'status': 'ok'}"
+2025-10-07 23:17:41,Mumbai Branch,1001,Transfer,"{'result': {'amount': 800.0, 'from': 'Mumbai:1001', 'status': 'transfer_complete', 'to': '127.0.0.1:1001', 'txid': 'Mumbai-1759859261686-7415'}, 'status': 'ok'}"
+2025-10-07 23:17:52,Mumbai Branch,1001,Transfer,"{'result': {'amount': 800.0, 'from': {'account': '1001', 'balance': 77860.0}, 'to': {'account': '1002', 'balance': 23210.0}}, 'status': 'ok'}"

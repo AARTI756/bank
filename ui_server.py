@@ -3,7 +3,6 @@ from flask import Flask, request, jsonify
 from protocol import send_request
 import requests
 
-
 app = Flask(__name__)
 
 @app.route("/balance", methods=["POST"])
@@ -36,14 +35,11 @@ def withdraw():
 def list_accounts():
     host = request.args.get("host", "127.0.0.1")
     port = int(request.args.get("port"))
-
     try:
         resp = send_request(host, port, "list_accounts", {})
         return jsonify(resp)
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)})
-
-
 
 @app.route("/transfer", methods=["POST"])
 def transfer():
@@ -74,6 +70,15 @@ def transfer():
         }
         resp = send_request(src_host, src_port, "inter_branch_transfer", params)
 
+    return jsonify(resp)
+
+# ----- new endpoint to fetch logs for an account -----
+@app.route("/get_logs", methods=["POST"])
+def get_logs():
+    host = request.form["host"]
+    port = int(request.form["port"])
+    account = request.form["account"]
+    resp = send_request(host, port, "get_logs", {"account_no": account})
     return jsonify(resp)
 
 if __name__ == "__main__":
