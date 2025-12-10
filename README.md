@@ -188,3 +188,6 @@ Open in browser → [http://192.168.1.10:8501](http://192.168.1.10:8501)
 Transfer ₹500 from **Mumbai (192.168.1.10:9100)** → **Delhi (192.168.1.20:9101)**
 via Flask Bridge `192.168.1.10:5000` using **2PC protocol**.
 
+## 🎥 Demo Video
+
+(https://github.com/AARTI756/bank/blob/main/bank.mp4)
