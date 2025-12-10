@@ -194,10 +194,10 @@ via Flask Bridge `192.168.1.10:5000` using **2PC protocol**.
 ![Dashboard UI](https://github.com/AARTI756/bank/blob/main/ss/dashboard.png)
 
 ### 📂 Account Operations
-![Account UI](assets/ui/account.png)
+![Account UI](https://github.com/AARTI756/bank/blob/main/ss/account.png)
 
 ### 💸 Transfer Money
-![Transfer UI](assets/ui/transfer.png)
+![Transfer UI](https://github.com/AARTI756/bank/blob/main/ss/transfer.png)
 
 
 ## 🎥 Demo Video
